@@ -6,12 +6,15 @@ import {
   ButtonVariant,
   DropdownItem,
   PageSection,
+  FormGroup,
 } from "@patternfly/react-core";
 import { useState } from "react";
-import { FormProvider, useForm } from "react-hook-form";
+import { FormProvider, useForm, useFormContext} from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 
+
+import { KeycloakTextInput } from "../../../components/keycloak-text-input/KeycloakTextInput";
 import { adminClient } from "../../../admin-client";
 import { useAlerts } from "../../../components/alert/Alerts";
 import { useConfirmDialog } from "../../../components/confirm-dialog/ConfirmDialog";
@@ -21,6 +24,8 @@ import { ViewHeader } from "../../../components/view-header/ViewHeader";
 import { useFetch } from "../../../utils/useFetch";
 import { useParams } from "../../../utils/useParams";
 import { toAuthorizationTab } from "../../routes/AuthenticationTab";
+import { HelpItem } from "ui-shared";
+
 import {
   PolicyDetailsParams,
   toPolicyDetails,
@@ -45,9 +50,38 @@ type Policy = Omit<PolicyRepresentation, "roles"> & {
   roles?: RequiredIdValue[];
 };
 
+const TestPolicyHandler = () => {
+  const {
+    register,
+  } = useFormContext();
+
+  return (
+    <>
+      <FormGroup
+        label={"Probability"}
+        fieldId="probability"
+        labelIcon={
+          <HelpItem
+            helpText={"Set probability for policy grant (English notation: 0.0)"}
+            fieldLabelId="clients:probability"
+          />
+        }
+        isRequired
+      >
+        <KeycloakTextInput
+          id="probability"
+          data-testid="probability"
+          {...register("probability", { required: true })}
+        />
+      </FormGroup>
+    </>
+  );
+};
+
 const COMPONENTS: {
   [index: string]: () => JSX.Element;
 } = {
+  "TestPolicy": TestPolicyHandler,
   aggregate: Aggregate,
   client: Client,
   user: User,
@@ -93,152 +127,154 @@ export default function PolicyDetails() {
         }
 
         return {
-          policy: result[0],
-          policies: result[1].map((p) => p.id),
-        };
-      }
-      return {};
-    },
-    ({ policy, policies }) => {
-      reset({ ...policy, policies });
-      setPolicy(policy);
-    },
-    [id, policyType, policyId],
-  );
 
-  const onSubmit = async (policy: Policy) => {
-    // remove entries that only have the boolean set and no id
-    policy.groups = policy.groups?.filter((g) => g.id);
-    policy.clientScopes = policy.clientScopes?.filter((c) => c.id);
-    policy.roles = policy.roles
-      ?.filter((r) => r.id)
-      .map((r) => ({ ...r, required: r.required || false }));
-
-    try {
-      if (policyId) {
-        await adminClient.clients.updatePolicy(
-          { id, type: policyType, policyId },
-          policy,
-        );
-      } else {
-        const result = await adminClient.clients.createPolicy(
-          { id, type: policyType },
-          policy,
-        );
-        navigate(
-          toPolicyDetails({
-            realm,
-            id,
-            policyType,
-            policyId: result.id!,
-          }),
-        );
-      }
-      addAlert(
-        t((policyId ? "update" : "create") + "PolicySuccess"),
-        AlertVariant.success,
-      );
-    } catch (error) {
-      addError("clients:policySaveError", error);
+        policy: result[0],
+        policies: result[1].map((p) => p.id),
+      };
     }
-  };
+    return {};
+  },
+  ({ policy, policies }) => {
+    reset({ ...policy, policies });
+    setPolicy(policy);
+  },
+  [id, policyType, policyId],
+);
 
-  const [toggleDeleteDialog, DeleteConfirm] = useConfirmDialog({
-    titleKey: "clients:deletePolicy",
-    messageKey: "clients:deletePolicyConfirm",
-    continueButtonLabel: "clients:confirm",
-    onConfirm: async () => {
-      try {
-        await adminClient.clients.delPolicy({
+const onSubmit = async (policy: Policy) => {
+  // remove entries that only have the boolean set and no id
+  policy.groups = policy.groups?.filter((g) => g.id);
+  policy.clientScopes = policy.clientScopes?.filter((c) => c.id);
+  policy.roles = policy.roles
+    ?.filter((r) => r.id)
+    .map((r) => ({ ...r, required: r.required || false }));
+
+  try {
+    if (policyId) {
+      await adminClient.clients.updatePolicy(
+        { id, type: policyType, policyId },
+        policy,
+      );
+    } else {
+      const result = await adminClient.clients.createPolicy(
+        { id, type: policyType },
+        policy,
+      );
+      navigate(
+        toPolicyDetails({
+          realm,
           id,
-          policyId,
-        });
-        addAlert(t("policyDeletedSuccess"), AlertVariant.success);
-        navigate(toAuthorizationTab({ realm, clientId: id, tab: "policies" }));
-      } catch (error) {
-        addError("clients:policyDeletedError", error);
-      }
-    },
-  });
-
-  if (policyId && !policy) {
-    return <KeycloakSpinner />;
+          policyType,
+          policyId: result.id!,
+        }),
+      );
+    }
+    addAlert(
+      t((policyId ? "update" : "create") + "PolicySuccess"),
+      AlertVariant.success,
+    );
+  } catch (error) {
+    addError("clients:policySaveError", error);
   }
+};
 
-  function getComponentType() {
-    return isValidComponentType(policyType)
-      ? COMPONENTS[policyType]
-      : COMPONENTS["js"];
-  }
+const [toggleDeleteDialog, DeleteConfirm] = useConfirmDialog({
+  titleKey: "clients:deletePolicy",
+  messageKey: "clients:deletePolicyConfirm",
+  continueButtonLabel: "clients:confirm",
+  onConfirm: async () => {
+    try {
+      await adminClient.clients.delPolicy({
+        id,
+        policyId,
+      });
+      addAlert(t("policyDeletedSuccess"), AlertVariant.success);
+      navigate(toAuthorizationTab({ realm, clientId: id, tab: "policies" }));
+    } catch (error) {
+      addError("clients:policyDeletedError", error);
+    }
+  },
+});
 
-  const ComponentType = getComponentType();
-
-  return (
-    <>
-      <DeleteConfirm />
-      <ViewHeader
-        titleKey={
-          policyId
-            ? policy?.name!
-            : t("clients:createPolicyOfType", { policyType })
-        }
-        dropdownItems={
-          policyId
-            ? [
-                <DropdownItem
-                  key="delete"
-                  data-testid="delete-policy"
-                  onClick={() => toggleDeleteDialog()}
-                >
-                  {t("common:delete")}
-                </DropdownItem>,
-              ]
-            : undefined
-        }
-      />
-      <PageSection variant="light">
-        <FormAccess
-          isHorizontal
-          onSubmit={handleSubmit(onSubmit)}
-          role="view-clients"
-        >
-          <FormProvider {...form}>
-            <NameDescription isDisabled={isDisabled} prefix="policy" />
-            <ComponentType />
-            <LogicSelector isDisabled={isDisabled} />
-          </FormProvider>
-          <ActionGroup>
-            <div className="pf-u-mt-md">
-              <Button
-                isDisabled={isDisabled}
-                variant={ButtonVariant.primary}
-                className="pf-u-mr-md"
-                type="submit"
-                data-testid="save"
-              >
-                {t("common:save")}
-              </Button>
-
-              <Button
-                variant="link"
-                data-testid="cancel"
-                component={(props) => (
-                  <Link
-                    {...props}
-                    to={toAuthorizationTab({
-                      realm,
-                      clientId: id,
-                      tab: "policies",
-                    })}
-                  />
-                )}
-              >
-                {t("common:cancel")}
-              </Button>
-            </div>
-          </ActionGroup>
-        </FormAccess>
-      </PageSection>
-    </>
-  );
+if (policyId && !policy) {
+  return <KeycloakSpinner />;
 }
+
+function getComponentType() {
+  return isValidComponentType(policyType)
+    ? COMPONENTS[policyType]
+    : COMPONENTS["js"];
+}
+
+const ComponentType = getComponentType();
+
+return (
+  <>
+    <DeleteConfirm />
+    <ViewHeader
+      titleKey={
+        policyId
+          ? policy?.name!
+          : t("clients:createPolicyOfType", { policyType })
+      }
+      dropdownItems={
+        policyId
+          ? [
+              <DropdownItem
+                key="delete"
+                data-testid="delete-policy"
+                onClick={() => toggleDeleteDialog()}
+              >
+                {t("common:delete")}
+              </DropdownItem>,
+            ]
+          : undefined
+      }
+    />
+    <PageSection variant="light">
+      <FormAccess
+        isHorizontal
+        onSubmit={handleSubmit(onSubmit)}
+        role="view-clients"
+      >
+        <FormProvider {...form}>
+          <NameDescription isDisabled={isDisabled} prefix="policy" />
+          <ComponentType />
+          <LogicSelector isDisabled={isDisabled} />
+        </FormProvider>
+        <ActionGroup>
+          <div className="pf-u-mt-md">
+            <Button
+              isDisabled={isDisabled}
+              variant={ButtonVariant.primary}
+              className="pf-u-mr-md"
+              type="submit"
+              data-testid="save"
+            >
+              {t("common:save")}
+            </Button>
+
+            <Button
+              variant="link"
+              data-testid="cancel"
+              component={(props) => (
+                <Link
+                  {...props}
+                  to={toAuthorizationTab({
+                    realm,
+                    clientId: id,
+                    tab: "policies",
+                  })}
+                />
+              )}
+            >
+              {t("common:cancel")}
+            </Button>
+          </div>
+        </ActionGroup>
+      </FormAccess>
+    </PageSection>
+  </>
+);
+          }
+
